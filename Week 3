@@ -1,0 +1,158 @@
+//Design TCP iterative Client and server application to reverse the given input sentence.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#define SERVER_IP "127.0.0.1"  // Change to the server's IP address
+#define PORT 12345
+
+int main() {
+    int client_socket;
+    struct sockaddr_in server_addr;
+
+    // Create a socket
+    client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket == -1) {
+        perror("Error creating socket");
+        exit(1);
+    }
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    // Connect to the server
+    if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        perror("Error connecting to the server");
+        exit(1);
+    }
+    else{
+    	printf("Connection Established\n");
+    	}
+
+    while (1) {
+        char input[1024];
+        char buffer[1024];
+        ssize_t bytes_sent, bytes_received;
+
+        printf("Enter a sentence to reverse (or type 'exit' to quit): ");
+        fgets(input, sizeof(input), stdin);
+
+        if (strncmp(input, "exit", 4) == 0) {
+            break;
+        }
+
+        // Send the input sentence to the server
+        bytes_sent = send(client_socket, input, strlen(input), 0);
+        if (bytes_sent == -1) {
+            perror("Error sending data");
+        }
+
+        // Receive the reversed sentence from the server
+        bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (bytes_received == -1) {
+            perror("Error receiving data");
+        } else {
+            buffer[bytes_received] = '\0';
+            printf("Reversed sentence: %s", buffer);
+        }
+    }
+
+    // Close the socket
+    close(client_socket);
+
+    return 0;
+}
+
+
+server /////////////
+
+//Design TCP iterative Client and server application to reverse the given input sentence.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#define PORT 12345
+
+int main() {
+    int server_socket, client_socket;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+
+    // Create a socket
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == -1) {
+        perror("Error creating socket");
+        exit(1);
+    }
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    // Bind the socket to the address and port
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        perror("Error binding");
+        exit(1);
+    }
+
+    // Listen for incoming connections
+    if (listen(server_socket, 10) == -1) {
+        perror("Error listening");
+        exit(1);
+    }
+
+    printf("Server is listening on port %d...\n", PORT);
+
+    while (1) {
+        // Accept a client connection
+        client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
+        if (client_socket == -1) {
+            perror("Error accepting connection");
+            continue;
+        }
+
+        printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+        while (1) {
+            char buffer[1024];
+            ssize_t bytes_received, bytes_sent;
+
+            // Receive data from the client
+            bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+            if (bytes_received <= 0) {
+                break;
+            }
+
+            // Reverse the received sentence
+            int len = bytes_received;
+            for (int i = 0; i < len / 2; i++) {
+                char temp = buffer[i];
+                buffer[i] = buffer[len - i - 1];
+                buffer[len - i - 1] = temp;
+            }
+
+            // Send the reversed sentence back to the client
+            bytes_sent = send(client_socket, buffer, bytes_received, 0);
+            if (bytes_sent == -1) {
+                perror("Error sending data");
+            }
+        }
+
+        // Close the client socket
+        close(client_socket);
+    }
+
+    // Close the server socket (this part of the code is unreachable)
+    close(server_socket);
+
+    return 0;
+}
