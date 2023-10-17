@@ -1,0 +1,167 @@
+//Design a TCP concurrent server to convert a given text into upper case using multiplexing system call ―select‖.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+int main() {
+    int clientSocket;
+    char buffer[1024];
+    struct sockaddr_in serverAddr;
+
+    // Create a socket for the client
+    if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket creation failed");
+        exit(1);
+    }
+
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(8080);  // Use the same port as the server
+    serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // Use the server's IP address
+
+    // Connect to the server
+    if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+        perror("Connection failed");
+        exit(1);
+    }
+
+    while (1) {
+        printf("Enter a message: ");
+        fgets(buffer, sizeof(buffer), stdin);
+
+        // Send the message to the server
+        send(clientSocket, buffer, strlen(buffer), 0);
+
+        // Receive the response from the server
+        recv(clientSocket, buffer, sizeof(buffer), 0);
+
+        printf("Server response: %s\n", buffer);
+    }
+
+    close(clientSocket);
+    return 0;
+}
+
+
+server ///////////////
+
+//Design a TCP concurrent server to convert a given text into upper case using multiplexing system call ―select‖.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <ctype.h>
+
+#define MAX_CLIENTS 10
+#define MAX_BUFFER_SIZE 1024
+
+int main() {
+    int serverSocket, clientSockets[MAX_CLIENTS], maxSocket, activity, i, valread;
+    int maxClients = MAX_CLIENTS;
+    fd_set readSockets;
+    char buffer[MAX_BUFFER_SIZE];
+    int addrlen;
+
+    for (i = 0; i < maxClients; i++) {
+        clientSockets[i] = 0;
+    }
+
+    // Create a socket for the server
+    if ((serverSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket creation failed");
+        exit(1);
+    }
+
+    struct sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(8080);  // You can use any available port
+
+    addrlen = sizeof(serverAddr); // Declare addrlen here
+
+    // Bind the socket to a specific address and port
+    if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+        perror("Binding failed");
+        exit(1);
+    }
+
+    // Listen for incoming connections
+    if (listen(serverSocket, 5) < 0) {
+        perror("Listening failed");
+        exit(1);
+    }
+
+    printf("Server listening on port 8080...\n");
+
+    while (1) {
+        FD_ZERO(&readSockets);
+        FD_SET(serverSocket, &readSockets);
+        maxSocket = serverSocket;
+
+        for (i = 0; i < maxClients; i++) {
+            int clientSocket = clientSockets[i];
+            if (clientSocket > 0) {
+                FD_SET(clientSocket, &readSockets);
+                if (clientSocket > maxSocket) {
+                    maxSocket = clientSocket;
+                }
+            }
+        }
+
+        // Use select to multiplex between sockets
+        activity = select(maxSocket + 1, &readSockets, NULL, NULL, NULL);
+
+        if (activity < 0) {
+            perror("Select error");
+        }
+
+        if (FD_ISSET(serverSocket, &readSockets)) {
+            // Handle new incoming connection
+            int newSocket;
+            if ((newSocket = accept(serverSocket, (struct sockaddr *)&serverAddr, (socklen_t *)&addrlen)) < 0) {
+                perror("Accept error");
+                exit(1);
+            }
+
+            for (i = 0; i < maxClients; i++) {
+                if (clientSockets[i] == 0) {
+                    clientSockets[i] = newSocket;
+                    printf("New connection, socket fd is %d, IP is : %s, Port : %d\n",
+                           newSocket, inet_ntoa(serverAddr.sin_addr), ntohs(serverAddr.sin_port));
+                    break;
+                }
+            }
+        }
+
+        for (i = 0; i < maxClients; i++) {
+            int clientSocket = clientSockets[i];
+            if (FD_ISSET(clientSocket, &readSockets)) {
+                valread = read(clientSocket, buffer, MAX_BUFFER_SIZE);
+                if (valread == 0) {
+                    // Client disconnected
+                    getpeername(clientSocket, (struct sockaddr *)&serverAddr, (socklen_t *)&addrlen);
+                    printf("Host disconnected, IP %s, Port %d\n",
+                           inet_ntoa(serverAddr.sin_addr), ntohs(serverAddr.sin_port));
+                    close(clientSocket);
+                    clientSockets[i] = 0;
+                } else {
+                    // Convert the received text to uppercase
+                    for (int j = 0; j < valread; j++) {
+                        buffer[j] = toupper(buffer[j]);
+                    }
+                    // Echo back to the client
+                    send(clientSocket, buffer, valread, 0);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
