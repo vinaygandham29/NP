@@ -1,0 +1,160 @@
+//Design a TCP concurrent server to echo given set of sentences using poll functions.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+int main() {
+    int clientSocket;
+    char buffer[1024];
+    struct sockaddr_in serverAddr;
+
+    // Create a socket for the client
+    if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket creation failed");
+        exit(1);
+    }
+
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(8080);  // Use the same port as the server
+    serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // Use the server's IP address
+
+    // Connect to the server
+    if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+        perror("Connection failed");
+        exit(1);
+    }
+
+    printf("Connected to the server. Enter a message: ");
+    fgets(buffer, sizeof(buffer), stdin);
+
+    // Send the message to the server
+    send(clientSocket, buffer, strlen(buffer), 0);
+
+    // Receive the response from the server
+    int bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0);
+    if (bytesRead < 0) {
+        perror("Receive failed");
+        exit(1);
+    }
+
+    buffer[bytesRead] = '\0';
+    printf("Server response: %s\n", buffer);
+
+    close(clientSocket);
+    return 0;
+}
+
+
+server ////////
+
+
+//Design a TCP concurrent server to echo given set of sentences using poll functions.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/poll.h>
+
+#define MAX_CLIENTS 10
+#define MAX_BUFFER_SIZE 1024
+
+int main() {
+    int serverSocket, clientSockets[MAX_CLIENTS];
+    struct pollfd fds[MAX_CLIENTS + 1];
+    int numClients = 0;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        clientSockets[i] = -1;
+        fds[i].fd = -1;
+    }
+
+    // Create a socket for the server
+    if ((serverSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket creation failed");
+        exit(1);
+    }
+
+    struct sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(8080);  // You can use any available port
+    socklen_t addrlen = sizeof(serverAddr);
+
+    // Bind the socket to a specific address and port
+    if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+        perror("Binding failed");
+        exit(1);
+    }
+
+    // Listen for incoming connections
+    if (listen(serverSocket, 5) < 0) {
+        perror("Listening failed");
+        exit(1);
+    }
+
+    printf("Server listening on port 8080...\n");
+
+    fds[0].fd = serverSocket;
+    fds[0].events = POLLIN;
+
+    while (1) {
+        int pollResult = poll(fds, numClients + 1, -1);
+
+        if (pollResult < 0) {
+            perror("Poll error");
+            exit(1);
+        }
+
+        if (fds[0].revents & POLLIN) {
+            // New client connection
+            int newSocket;
+            if ((newSocket = accept(serverSocket, (struct sockaddr *)&serverAddr, (socklen_t *)&addrlen)) < 0) {
+                perror("Accept error");
+            } else if (numClients < MAX_CLIENTS) {
+                // Add the new client socket to the list
+                for (int i = 1; i <= MAX_CLIENTS; i++) {
+                    if (clientSockets[i - 1] == -1) {
+                        clientSockets[i - 1] = newSocket;
+                        fds[i].fd = newSocket;
+                        fds[i].events = POLLIN;
+                        numClients++;
+                        printf("New connection, socket fd is %d\n", newSocket);
+                        break;
+                    }
+                }
+            } else {
+                // Too many clients, reject the connection
+                close(newSocket);
+            }
+        }
+
+        for (int i = 1; i <= numClients; i++) {
+            if (fds[i].revents & POLLIN) {
+                int clientSocket = fds[i].fd;
+                char buffer[MAX_BUFFER_SIZE];
+                int bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0);
+
+                if (bytesRead <= 0) {
+                    // Client disconnected
+                    printf("Client disconnected, socket fd is %d\n", clientSocket);
+                    close(clientSocket);
+                    clientSockets[i - 1] = -1;
+                    fds[i].fd = -1;
+                    numClients--;
+                } else {
+                    // Echo the received message back to the client
+                    send(clientSocket, buffer, bytesRead, 0);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
